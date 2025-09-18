@@ -1,0 +1,12 @@
+cd backend; .\venv\Scripts\activate; pip install -r requirements.txt
+
+
+cd backend && venv\Scripts\uvicorn.exe app.main:app --reload --host 0.0.0.0 --port 8000
+
+Invoke-RestMethod -Uri "http://localhost:8000/api/v1/content/" -Method GET
+
+Invoke-RestMethod -Uri "http://localhost:8000/api/v1/crawl/start" -Method POST -Headers @{"Content-Type"="application/json"} -Body '{"url": "http://localhost:8080/test-content.html", "max_depth": 1, "max_pages": 10}'
+
+python -m http.server 8080
+
+start http://localhost:3000
