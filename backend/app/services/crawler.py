@@ -74,20 +74,36 @@ class WebCrawler:
                     content_data = self._extract_content(html_content, url)
                     
                     if content_data:
-                        # Save to database
-                        content = Content(
-                            url=url,
-                            title=content_data['title'],
-                            original_text=content_data['original_text'],
-                            cleaned_text=content_data['cleaned_text']
-                        )
-                        self.db.add(content)
+                        # Check if URL already exists
+                        existing_content = self.db.query(Content).filter(Content.url == url).first()
+                        
+                        if existing_content:
+                            # Update existing content
+                            existing_content.title = content_data['title']
+                            existing_content.original_text = content_data['original_text']
+                            existing_content.cleaned_text = content_data['cleaned_text']
+                            existing_content.status = "pending"  # Reset status for re-analysis
+                            self.db.commit()
+                            content = existing_content
+                            action = "re-crawled"
+                        else:
+                            # Save new content to database
+                            content = Content(
+                                url=url,
+                                title=content_data['title'],
+                                original_text=content_data['original_text'],
+                                cleaned_text=content_data['cleaned_text']
+                            )
+                            self.db.add(content)
+                            self.db.commit()  # Commit to get the content ID
+                            self.db.refresh(content)
+                            action = "crawled"
                         
                         # Add audit log
                         audit_log = AuditLog(
                             content_id=content.id,
-                            action="crawled",
-                            details=f"Successfully crawled {url}"
+                            action=action,
+                            details=f"Successfully {action} {url}"
                         )
                         self.db.add(audit_log)
                         self.db.commit()
@@ -166,9 +182,29 @@ async def start_crawl_job(db: Session, url: str) -> int:
     db.commit()
     db.refresh(job)
     
-    crawler = WebCrawler(db)
-    
-    # Start crawling in background
-    asyncio.create_task(crawler.crawl_url(url, job.id))
+    # Start crawling in background with a new database session
+    asyncio.create_task(crawl_with_new_session(url, job.id))
     
     return job.id
+
+async def crawl_with_new_session(url: str, job_id: int):
+    """Crawl with a new database session to avoid session lifecycle issues"""
+    from app.database.database import SessionLocal
+    
+    db = SessionLocal()
+    try:
+        crawler = WebCrawler(db)
+        await crawler.crawl_url(url, job_id)
+    except Exception as e:
+        logger.error(f"Background crawl failed for job {job_id}: {str(e)}")
+        # Update job status to failed
+        try:
+            job = db.query(CrawlJob).filter(CrawlJob.id == job_id).first()
+            if job:
+                job.status = "failed"
+                job.error_message = str(e)
+                db.commit()
+        except Exception as db_error:
+            logger.error(f"Failed to update job status: {str(db_error)}")
+    finally:
+        db.close()
