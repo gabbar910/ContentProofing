@@ -9,6 +9,13 @@ import {
 } from '@heroicons/react/24/outline';
 import api from '../services/api';
 
+const errorTypeColors = {
+  spelling: 'bg-yellow-100 text-yellow-800',
+  grammar: 'bg-orange-200 text-orange-800',
+  style: 'bg-purple-100 text-purple-800',
+  punctuation: 'bg-blue-100 text-blue-800'
+};
+
 export default function Dashboard() {
   const [stats, setStats] = useState(null);
   const [recentActivity, setRecentActivity] = useState([]);
@@ -80,10 +87,7 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-        <p className="mt-2 text-sm text-gray-700">
-          Overview of your content proofreading system
-        </p>
+        <h1 className="text-2xl font-bold text-purple-700">Dashboard</h1>
       </div>
 
       {/* Stats Cards */}
@@ -113,7 +117,7 @@ export default function Dashboard() {
         {/* Recent Activity */}
         <div className="bg-white shadow rounded-lg">
           <div className="px-4 py-5 sm:p-6">
-            <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">
+            <h3 className="text-lg leading-6 font-medium text-gray-700 mb-4">
               Recent Activity
             </h3>
             <div className="flow-root">
@@ -129,7 +133,7 @@ export default function Dashboard() {
                       ) : null}
                       <div className="relative flex space-x-3">
                         <div>
-                          <span className="h-8 w-8 rounded-full bg-primary-500 flex items-center justify-center ring-8 ring-white">
+                          <span className="h-8 w-8 rounded-full bg-purple-400 flex items-center justify-center ring-8 ring-white">
                             <ExclamationTriangleIcon className="h-5 w-5 text-white" aria-hidden="true" />
                           </span>
                         </div>
@@ -165,14 +169,14 @@ export default function Dashboard() {
         {/* Error Type Breakdown */}
         <div className="bg-white shadow rounded-lg">
           <div className="px-4 py-5 sm:p-6">
-            <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">
+            <h3 className="text-lg leading-6 font-medium text-gray-700 mb-4">
               Error Type Breakdown
             </h3>
             <div className="space-y-4">
               {errorTypeStats.map((errorType) => (
                 <div key={errorType.error_type} className="flex items-center justify-between">
-                  <div className="flex items-center">
-                    <span className="capitalize text-sm font-medium text-gray-900">
+                  <div className="flex items-center">                    
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${errorTypeColors[errorType.error_type] || 'bg-gray-100 text-gray-800'}`}>
                       {errorType.error_type}
                     </span>
                   </div>
@@ -205,7 +209,7 @@ export default function Dashboard() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <Link
               to="/crawl"
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700"
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-purple-600 hover:bg-primary-700"
             >
               Start New Crawl
             </Link>
