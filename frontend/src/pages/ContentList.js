@@ -10,7 +10,7 @@ import {
 import api from '../services/api';
 
 const statusColors = {
-  pending: 'bg-yellow-100 text-yellow-800',
+  pending: 'bg-red-100 text-red-800',
   analyzed: 'bg-green-100 text-green-800',
   reviewed: 'bg-blue-100 text-blue-800'
 };
@@ -100,8 +100,8 @@ export default function ContentList() {
     <div className="space-y-6">
       <div className="sm:flex sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Content</h1>
-          <p className="mt-2 text-sm text-gray-700">
+          <h1 className="text-2xl font-bold text-purple-700">Content</h1>
+          <p className="mt-2 text-sm text-purple-600">
             Manage and review crawled content
           </p>
         </div>
@@ -143,7 +143,7 @@ export default function ContentList() {
         <div className="mt-4 flex justify-between">
           <button
             onClick={handleSearch}
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700"
+            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-purple-600 hover:bg-primary-700"
           >
             <MagnifyingGlassIcon className="h-4 w-4 mr-2" />
             Search
@@ -174,7 +174,7 @@ export default function ContentList() {
                     <div>
                       <Link
                         to={`/content/${item.id}`}
-                        className="text-sm font-medium text-primary-600 hover:text-primary-500"
+                        className="text-sm font-medium text-purple-600 hover:text-primary-500"
                       >
                         {item.title}
                       </Link>

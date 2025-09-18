@@ -10,15 +10,15 @@ import {
 import api from '../services/api';
 
 const statusColors = {
-  pending: 'bg-yellow-100 text-yellow-800',
-  approved: 'bg-green-100 text-green-800',
-  rejected: 'bg-red-100 text-red-800',
-  applied: 'bg-blue-100 text-blue-800'
+  pending: 'bg-red-100 text-red-800',
+  approved: 'bg-green-600 text-white',
+  rejected: 'bg-red-600 text-white',
+  applied: 'bg-blue-600 text-white'
 };
 
 const errorTypeColors = {
-  spelling: 'bg-red-100 text-red-800',
-  grammar: 'bg-orange-100 text-orange-800',
+  spelling: 'bg-yellow-100 text-yellow-800',
+  grammar: 'bg-orange-200 text-orange-800',
   style: 'bg-purple-100 text-purple-800',
   punctuation: 'bg-blue-100 text-blue-800'
 };

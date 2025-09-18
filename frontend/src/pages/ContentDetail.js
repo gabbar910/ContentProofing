@@ -2,24 +2,27 @@ import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import ReactDiffViewer from 'react-diff-viewer';
+import { CSVLink } from 'react-csv';
+import jsPDF from 'jspdf';
 import {
   ArrowLeftIcon,
   PlayIcon,
   CheckIcon,
-  XMarkIcon
+  XMarkIcon,
+  DocumentArrowDownIcon
 } from '@heroicons/react/24/outline';
 import api from '../services/api';
 
 const statusColors = {
-  pending: 'bg-yellow-100 text-yellow-800',
-  approved: 'bg-green-100 text-green-800',
-  rejected: 'bg-red-100 text-red-800',
-  applied: 'bg-blue-100 text-blue-800'
+  pending: 'bg-red-100 text-red-800',
+  approved: 'bg-green-600 text-white',
+  rejected: 'bg-red-600 text-white',
+  applied: 'bg-blue-600 text-white'
 };
 
 const errorTypeColors = {
-  spelling: 'bg-red-100 text-red-800',
-  grammar: 'bg-orange-100 text-orange-800',
+  spelling: 'bg-yellow-100 text-yellow-800',
+  grammar: 'bg-orange-200 text-orange-800',
   style: 'bg-purple-100 text-purple-800',
   punctuation: 'bg-blue-100 text-blue-800'
 };
@@ -30,6 +33,10 @@ export default function ContentDetail() {
   const [suggestions, setSuggestions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedSuggestion, setSelectedSuggestion] = useState(null);
+  const [filters, setFilters] = useState({
+    errorType: 'all',
+    status: 'all'
+  });
 
   useEffect(() => {
     fetchContentDetail();
@@ -109,6 +116,95 @@ export default function ContentDetail() {
     if (confidence >= 0.8) return 'text-green-600';
     if (confidence >= 0.6) return 'text-yellow-600';
     return 'text-red-600';
+  };
+
+  // Clear filters function
+  const clearFilters = () => {
+    setFilters({ errorType: 'all', status: 'all' });
+  };
+
+  // Filter suggestions based on selected filters
+  const filteredSuggestions = suggestions.filter(suggestion => {
+    const errorTypeMatch = filters.errorType === 'all' || 
+                          suggestion.error_type === filters.errorType;
+    const statusMatch = filters.status === 'all' || 
+                       suggestion.status === filters.status;
+    return errorTypeMatch && statusMatch;
+  });
+
+  // Prepare CSV data (using filtered suggestions)
+  const csvData = filteredSuggestions.map(suggestion => ({
+    'Error Type': suggestion.error_type,
+    'Status': suggestion.status,
+    'Confidence': `${(suggestion.confidence_score * 100).toFixed(0)}%`,
+    'Explanation': suggestion.explanation,
+    'Original Text': suggestion.original_text,
+    'Suggested Text': suggestion.suggested_text,
+    'Created At': suggestion.created_at ? new Date(suggestion.created_at).toLocaleDateString() : 'N/A'
+  }));
+
+  // PDF export function
+  const handlePDFExport = () => {
+    if (filteredSuggestions.length === 0) {
+      toast.error('No suggestions to export');
+      return;
+    }
+
+    try {
+      const doc = new jsPDF();
+      
+      // Title
+      doc.setFontSize(16);
+      doc.text('Content Proof Suggestions Report', 15, 15);
+      
+      // Content info
+      doc.setFontSize(12);
+      doc.text(`Content: ${content.title}`, 15, 25);
+      doc.text(`URL: ${content.url}`, 15, 32);
+      doc.text(`Total Suggestions: ${filteredSuggestions.length}`, 15, 39);
+      doc.text(`Generated: ${new Date().toLocaleDateString()}`, 15, 46);
+      
+      let yPos = 60;
+      
+      filteredSuggestions.forEach((suggestion, index) => {
+        // Check if we need a new page
+        if (yPos > 250) {
+          doc.addPage();
+          yPos = 20;
+        }
+        
+        doc.setFontSize(12);
+        doc.text(`${index + 1}. ${suggestion.error_type.toUpperCase()}`, 15, yPos);
+        yPos += 7;
+        
+        doc.setFontSize(10);
+        doc.text(`Status: ${suggestion.status}`, 20, yPos);
+        yPos += 5;
+        doc.text(`Confidence: ${(suggestion.confidence_score * 100).toFixed(0)}%`, 20, yPos);
+        yPos += 5;
+        
+        // Explanation (wrap text)
+        const explanationLines = doc.splitTextToSize(`Explanation: ${suggestion.explanation}`, 170);
+        doc.text(explanationLines, 20, yPos);
+        yPos += explanationLines.length * 5;
+        
+        // Original text (wrap text)
+        const originalLines = doc.splitTextToSize(`Original: ${suggestion.original_text}`, 170);
+        doc.text(originalLines, 20, yPos);
+        yPos += originalLines.length * 5;
+        
+        // Suggested text (wrap text)
+        const suggestedLines = doc.splitTextToSize(`Suggested: ${suggestion.suggested_text}`, 170);
+        doc.text(suggestedLines, 20, yPos);
+        yPos += suggestedLines.length * 5 + 5;
+      });
+
+      doc.save(`suggestions-report-${content.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.pdf`);
+      toast.success('PDF exported successfully');
+    } catch (error) {
+      toast.error('Failed to export PDF');
+      console.error('PDF export error:', error);
+    }
   };
 
   if (loading && !content) {
@@ -202,9 +298,84 @@ export default function ContentDetail() {
       {/* Suggestions */}
       <div className="bg-white shadow rounded-lg">
         <div className="px-4 py-5 sm:p-6">
-          <h2 className="text-lg font-medium text-gray-900 mb-4">
-            Suggestions ({suggestions.length})
-          </h2>
+          <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between mb-4">
+            <h2 className="text-lg font-medium text-gray-900">
+              Suggestions ({suggestions.length})
+            </h2>
+            
+            {/* Filters and Export Controls */}
+            {suggestions.length > 0 && (
+              <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+                {/* Filter Controls */}
+                <div className="flex flex-wrap gap-2 items-center">
+                  <select 
+                    value={filters.errorType}
+                    onChange={(e) => setFilters(prev => ({...prev, errorType: e.target.value}))}
+                    className="px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-md focus:ring-1 focus:ring-primary-500 focus:border-primary-500"
+                  >
+                    <option value="all">All Error Types</option>
+                    {Object.keys(errorTypeColors).map(type => (
+                      <option key={type} value={type}>
+                        {type.charAt(0).toUpperCase() + type.slice(1)}
+                      </option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={filters.status}
+                    onChange={(e) => setFilters(prev => ({...prev, status: e.target.value}))}
+                    className="px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-md focus:ring-1 focus:ring-primary-500 focus:border-primary-500"
+                  >
+                    <option value="all">All Statuses</option>
+                    {Object.keys(statusColors).map(status => (
+                      <option key={status} value={status}>
+                        {status.charAt(0).toUpperCase() + status.slice(1)}
+                      </option>
+                    ))}
+                  </select>
+
+                  {(filters.errorType !== 'all' || filters.status !== 'all') && (
+                    <button
+                      onClick={clearFilters}
+                      className="px-3 py-1.5 text-sm text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-md border border-gray-200 flex items-center gap-1 transition-colors"
+                    >
+                      <XMarkIcon className="h-4 w-4" />
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                {/* Export Controls */}
+                <div className="flex gap-2">
+                  <CSVLink 
+                    data={csvData} 
+                    filename={`suggestions-${content.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.csv`}
+                    className={`px-3 py-1.5 text-sm rounded-md flex items-center gap-1 transition-colors ${
+                      filteredSuggestions.length > 0 
+                        ? 'bg-green-100 text-green-800 hover:bg-green-200' 
+                        : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    }`}
+                    onClick={filteredSuggestions.length === 0 ? (e) => e.preventDefault() : undefined}
+                  >
+                    <DocumentArrowDownIcon className="h-4 w-4" />
+                    CSV
+                  </CSVLink>
+                  <button
+                    onClick={handlePDFExport}
+                    disabled={filteredSuggestions.length === 0}
+                    className={`px-3 py-1.5 text-sm rounded-md flex items-center gap-1 transition-colors ${
+                      filteredSuggestions.length > 0 
+                        ? 'bg-blue-100 text-blue-800 hover:bg-blue-200' 
+                        : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    }`}
+                  >
+                    <DocumentArrowDownIcon className="h-4 w-4" />
+                    PDF
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
           
           {suggestions.length === 0 ? (
             <div className="text-center py-8">
@@ -215,9 +386,15 @@ export default function ContentDetail() {
                 }
               </p>
             </div>
+          ) : filteredSuggestions.length === 0 ? (
+            <div className="text-center py-8">
+              <p className="text-sm text-gray-500">
+                No suggestions match the current filters
+              </p>
+            </div>
           ) : (
             <div className="space-y-4">
-              {suggestions.map((suggestion) => (
+              {filteredSuggestions.map((suggestion) => (
                 <div key={suggestion.id} className="border rounded-lg p-4">
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center space-x-3">
