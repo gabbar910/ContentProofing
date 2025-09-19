@@ -5,7 +5,9 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite:///./content_proof.db"
     SECRET_KEY: str = "your-secret-key-here"
-    OPENAI_API_KEY: str = ""
+    GEAI_API_KEY: str = ""
+    ANALYSIS_API_URL: str = "https://saiapi.corp.globant.com/chat"
+    MAX_API_TOKENS: int = 2048
     LANGUAGE_TOOL_URL: str = "http://localhost:8081"
     DEBUG: bool = True
     CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:3001"]

@@ -3,6 +3,7 @@ import string
 import json
 from typing import List, Dict, Optional
 import logging
+import httpx
 from sqlalchemy.orm import Session
 from app.database.models import Content, Suggestion, AuditLog
 from app.core.config import settings
@@ -12,19 +13,23 @@ logger = logging.getLogger(__name__)
 class ContentAnalyzer:
     def __init__(self, db: Session):
         self.db = db
-        self.openai_client = None
+        self.api_client = None
         
-        # Initialize OpenAI client
+        # Initialize Corporate API client
         try:
-            if hasattr(settings, 'OPENAI_API_KEY') and settings.OPENAI_API_KEY:
-                from openai import OpenAI
-                self.openai_client = OpenAI(api_key=settings.OPENAI_API_KEY)
-                logger.info("OpenAI client initialized successfully")
+            if hasattr(settings, 'GEAI_API_KEY') and settings.GEAI_API_KEY:
+                self.api_url = settings.ANALYSIS_API_URL
+                self.api_headers = {
+                    "Authorization": f"Bearer {settings.GEAI_API_KEY}",
+                    "Content-Type": "application/json"
+                }
+                self.api_client = True
+                logger.info("Corporate API client initialized successfully")
         except Exception as e:
-            logger.error(f"Failed to initialize OpenAI client: {str(e)}")
+            logger.error(f"Failed to initialize Corporate API client: {str(e)}")
     
     async def analyze_content(self, content_id: int) -> List[Dict]:
-        """Analyze content for grammar, spelling, and style issues using OpenAI"""
+        """Analyze content for grammar, spelling, and style issues using Corporate API"""
         content = self.db.query(Content).filter(Content.id == content_id).first()
         if not content:
             raise ValueError(f"Content with id {content_id} not found")
@@ -32,13 +37,13 @@ class ContentAnalyzer:
         suggestions = []
         
         try:
-            # Primary analysis using OpenAI
-            if self.openai_client:
-                llm_suggestions = await self._analyze_with_openai(content.cleaned_text)
+            # Primary analysis using Corporate API
+            if self.api_client:
+                llm_suggestions = await self._analyze_with_corporate_api(content.cleaned_text)
                 suggestions.extend(llm_suggestions)
             else:
-                logger.warning("OpenAI client not available, falling back to basic rules")
-                # Fallback to basic punctuation checks only if OpenAI is not available
+                logger.warning("Corporate API client not available, falling back to basic rules")
+                # Fallback to basic punctuation checks only if Corporate API is not available
                 basic_suggestions = self._check_basic_punctuation(content.cleaned_text)
                 suggestions.extend(basic_suggestions)
             
@@ -63,7 +68,7 @@ class ContentAnalyzer:
             audit_log = AuditLog(
                 content_id=content_id,
                 action="analyzed",
-                details=f"Generated {len(suggestions)} suggestions using {'OpenAI' if self.openai_client else 'basic rules'}"
+                details=f"Generated {len(suggestions)} suggestions using {'Corporate API' if self.api_client else 'basic rules'}"
             )
             self.db.add(audit_log)
             self.db.commit()
@@ -74,17 +79,21 @@ class ContentAnalyzer:
         
         return suggestions
     
-    async def _analyze_with_openai(self, text: str) -> List[Dict]:
-        """Analyze text using OpenAI for comprehensive grammar, spelling, and style suggestions"""
+    async def _analyze_with_corporate_api(self, text: str) -> List[Dict]:
+        """Analyze text using Corporate API for comprehensive grammar, spelling, and style suggestions"""
         suggestions = []
         
-        if not self.openai_client:
-            logger.error("OpenAI client not available")
+        if not self.api_client:
+            logger.error("Corporate API client not available")
             return suggestions
         
         try:
+            # Calculate chunk size based on API token limits
+            CHAR_PER_TOKEN = 4  # Conservative estimate
+            SAFETY_FACTOR = 0.8
+            max_chunk_size = int((settings.MAX_API_TOKENS * CHAR_PER_TOKEN) * SAFETY_FACTOR)
+            
             # Split text into chunks if it's too long
-            max_chunk_size = 2000
             text_chunks = [text[i:i+max_chunk_size] for i in range(0, len(text), max_chunk_size)]
             
             for chunk_index, chunk in enumerate(text_chunks):
@@ -121,57 +130,72 @@ Important:
 - Use confidence scores: 0.9+ for clear errors, 0.7-0.8 for likely improvements, 0.5-0.6 for style suggestions
 - Return valid JSON only"""
 
-                response = self.openai_client.chat.completions.create(
-                    model="gpt-3.5-turbo",
-                    messages=[
-                        {"role": "system", "content": "You are a professional editor. Return only valid JSON."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    max_tokens=1500,
-                    temperature=0.1
-                )
-                
-                # Parse the response
-                response_text = response.choices[0].message.content.strip()
-                logger.info(f"OpenAI response for chunk {chunk_index}: {response_text[:200]}...")
-                
-                try:
-                    # Try to parse JSON response
-                    parsed_response = json.loads(response_text)
-                    chunk_suggestions = parsed_response.get('suggestions', [])
+                # Make request to Corporate API
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(
+                        self.api_url,
+                        headers=self.api_headers,
+                        json={
+                            "model": "saia:assistant:Content-Proofer",
+                            "messages": [
+                                {"role": "user", "content": prompt}
+                            ],
+                            "stream": False
+                        },
+                        timeout=30
+                    )
                     
-                    # Adjust positions for the full text
-                    for suggestion in chunk_suggestions:
-                        suggestion['start_position'] += chunk_offset
-                        suggestion['end_position'] += chunk_offset
+                    # Check HTTP status
+                    if response.status_code != 200:
+                        logger.error(f"API request failed: {response.status_code} - {response.text}")
+                        continue
+                    
+                    # Parse the response
+                    response_data = response.json()
+                    content_str = response_data['choices'][0]['message']['content'].strip()
+                    
+                    # Remove markdown code fences if present
+                    content_str = content_str.replace('```json\n', '').replace('\n```', '')
+                    
+                    logger.info(f"Corporate API response for chunk {chunk_index}: {content_str[:200]}...")
+                    
+                    try:
+                        # Try to parse JSON response
+                        parsed_response = json.loads(content_str)
+                        chunk_suggestions = parsed_response.get('suggestions', [])
                         
-                        # Validate the suggestion has all required fields
-                        required_fields = ['original_text', 'suggested_text', 'error_type', 'explanation', 'confidence_score', 'start_position', 'end_position']
-                        if all(field in suggestion for field in required_fields):
-                            suggestions.append(suggestion)
-                        else:
-                            logger.warning(f"Skipping incomplete suggestion: {suggestion}")
-                    
-                except json.JSONDecodeError as e:
-                    logger.error(f"Failed to parse OpenAI JSON response: {e}")
-                    logger.error(f"Response was: {response_text}")
-                    # Try to extract suggestions using regex as fallback
-                    suggestions.extend(self._extract_suggestions_from_text(response_text, chunk_offset))
+                        # Adjust positions for the full text
+                        for suggestion in chunk_suggestions:
+                            suggestion['start_position'] += chunk_offset
+                            suggestion['end_position'] += chunk_offset
+                            
+                            # Validate the suggestion has all required fields
+                            required_fields = ['original_text', 'suggested_text', 'error_type', 'explanation', 'confidence_score', 'start_position', 'end_position']
+                            if all(field in suggestion for field in required_fields):
+                                suggestions.append(suggestion)
+                            else:
+                                logger.warning(f"Skipping incomplete suggestion: {suggestion}")
+                        
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Failed to parse Corporate API JSON response: {e}")
+                        logger.error(f"Response was: {content_str}")
+                        # Try to extract suggestions using regex as fallback
+                        suggestions.extend(self._extract_suggestions_from_text(content_str, chunk_offset))
                 
         except Exception as e:
-            logger.error(f"OpenAI analysis failed: {str(e)}")
+            logger.error(f"Corporate API analysis failed: {str(e)}")
         
         return suggestions
     
     def _extract_suggestions_from_text(self, response_text: str, offset: int = 0) -> List[Dict]:
-        """Fallback method to extract suggestions from non-JSON OpenAI responses"""
+        """Fallback method to extract suggestions from non-JSON Corporate API responses"""
         suggestions = []
         # This is a simple fallback - in practice, you might want more sophisticated parsing
         logger.warning("Using fallback suggestion extraction")
         return suggestions
     
     def _check_basic_punctuation(self, text: str) -> List[Dict]:
-        """Basic punctuation checks as fallback when OpenAI is not available"""
+        """Basic punctuation checks as fallback when Corporate API is not available"""
         suggestions = []
         
         # Check for double spaces
